@@ -25,12 +25,17 @@ postboot = """\
 chroot $1 update-rc.d -f buildbot remove
 
 chroot $1 addgroup --system minion
-chroot $1 adduser --system --home /var/local/buildbot --shell /bin/bash --ingroup zope --disabled-password --disabled-login minion
+chroot $1 adduser ubuntu sudo
+chroot $1 adduser --system --home /var/local/buildbot --shell /bin/bash --ingroup minion --disabled-password --disabled-login minion
+
+chroot $1 easy_install pip
+chroot $1 pip install  "buildbot==0.8.7p1" --no-deps
+chroot $1 pip install  "buildbot-slave==0.8.7p1" --no-deps
 
 mkdir -p $1/var/local/buildbot
 chroot $1 chown minion: /var/local/buildbot
 
-chroot $1 sudo -u minion /usr/bin/buildbot create-slave /var/local/buildbot %(master_host)s:%(master_port)s %(slave)s %(slave_password)s
+chroot $1 sudo -u minion /usr/bin/buildslave create-slave /var/local/buildbot %(master_host)s:%(master_port)s %(slave)s %(slave_password)s
 
 cat > $1/etc/default/buildbot << HERE
 BB_NUMBER[0]=0
@@ -43,7 +48,7 @@ HERE
 
 cat > $1/var/local/buildbot/buildbot.tac << HERE
 from twisted.application import service
-from buildbot.slave.bot import BuildSlave
+from buildbot.bot import BuildSlave
 import socket
 
 basedir = r'/var/local/buildbot'
@@ -64,7 +69,7 @@ s = BuildSlave(buildmaster_host, port, slavename, passwd, basedir,
 s.setServiceParent(application)
 HERE
 
-cat > $1/etc/dhcp3/dhclient-exit-hooks.d/update-hostname << HERE
+cat > $1/etc/dhcp/dhclient-exit-hooks.d/update-hostname << HERE
 if [ x\$reason != xBOUND ] && [ x\$reason != xREBIND ] && [ x\$reason != xREBOOT ]; then exit; fi
 echo Updating hostname: \$new_host_name
 hostname \$new_host_name
@@ -86,21 +91,21 @@ class VMBuilder:
 
     defaults = {
         "rootsize": 8192,
-        "mem": 1024,
-        "domain": 'yourdomain.com',
-        "hostname": "ubuntu",
+        "mem": 512,
+        "domain": 'linovia.net',
+        "hostname": "minion1",
         "arch": arch,
         "variant": "minbase",
         "components": "main,universe,multiverse,restricted",
         "lang": "en_GB.UTF-8",
-        "timezone": "Europe/London",
+        "timezone": "Europe/Paris",
         "execscript": os.path.realpath(os.path.join(os.curdir, "postboot.sh")),
         "addpkg": [
-            "standard^", "server^", "gpgv", "openssh-server", "buildbot", "subversion",
+            "standard^", "server^", "gpgv", "openssh-server", "buildbot", "subversion", "acpid", "avahi-daemon", "sudo", "net-tools", "isc-dhcp-client", "python-setuptools", "python-dateutil", "git"
             ],
     }
 
-    def __init__(self, hypervisor="kvm", suite="karmic", destdir="ubuntu", **kw):
+    def __init__(self, hypervisor="kvm", suite="precise", destdir="ubuntu", **kw):
         self.hypervisor = hypervisor
         self.suite = suite
         self.destdir = destdir
@@ -109,9 +114,9 @@ class VMBuilder:
         f = tempfile.NamedTemporaryFile(delete=False, prefix="/var/tmp/")
         print >>f, self.postboot % {
             'master_host': '192.168.201.1',
-            'master_port': '8081',
-            'slave': 'slave',
-            'slave_password': 'password',
+            'master_port': '9989',
+            'slave': 'example-slave',
+            'slave_password': 'pass',
         }
         f.close()
         os.chmod(f.name, 0755)
@@ -141,7 +146,8 @@ if __name__ == "__main__":
     parser = optparse.OptionParser(usage="%prog [options] project")
     parser.add_option("-p", "--proxy", help="http proxy URL")
     (options, args) = parser.parse_args()
-    builder = VMBuilder(proxy=options.proxy)
+    #builder = VMBuilder(proxy=options.proxy, mirror="http://ubuntu.mirrors.ovh.net/ftp.ubuntu.com/ubuntu")
+    builder = VMBuilder(proxy=options.proxy, mirror="http://ubuntu.mirrors.ovh.net/ftp.ubuntu.com/ubuntu", libvirt="qemu:///system")
     builder.build()
 
 
